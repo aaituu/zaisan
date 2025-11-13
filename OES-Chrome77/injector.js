@@ -1,8 +1,8 @@
-// Добавьте это в начало вашего content.js
-
+// ============================================================================
+// ПРОВЕРКА ДОСТУПНОСТИ РАСШИРЕНИЯ
+// ============================================================================
 console.log('[OES Extension] Content script loaded');
 
-// Проверка доступности service worker
 function checkServiceWorker() {
     if (!chrome.runtime || !chrome.runtime.id) {
         console.error('[OES Extension] Chrome runtime is not available');
@@ -12,7 +12,6 @@ function checkServiceWorker() {
     return true;
 }
 
-// Безопасная отправка сообщения
 function safeSendMessage(message, callback) {
     if (!checkServiceWorker()) {
         if (callback) callback({ error: 'Service worker not available' });
@@ -36,39 +35,12 @@ function safeSendMessage(message, callback) {
     }
 }
 
-// Безопасное создание порта
-function safeConnect(portName) {
-    if (!checkServiceWorker()) {
-        return null;
-    }
-    
-    try {
-        const port = chrome.runtime.connect({ name: portName });
-        
-        port.onDisconnect.addListener(() => {
-            if (chrome.runtime.lastError) {
-                console.error('[OES Extension] Port disconnected:', chrome.runtime.lastError.message);
-                showError('Connection lost. Please reload the page.');
-            }
-        });
-        
-        return port;
-    } catch (e) {
-        console.error('[OES Extension] Exception creating port:', e);
-        showError('Could not reach helper service.');
-        return null;
-    }
-}
-
-// Показать ошибку пользователю
 function showError(message) {
-    // Если у вас есть UI элемент для ошибок
     const errorDiv = document.getElementById('extension-error');
     if (errorDiv) {
         errorDiv.textContent = message;
         errorDiv.style.display = 'block';
     } else {
-        // Создаем временное уведомление
         const notification = document.createElement('div');
         notification.style.cssText = `
             position: fixed;
@@ -91,24 +63,27 @@ function showError(message) {
     }
 }
 
-// Пример использования в вашем коде:
-// Вместо: chrome.runtime.sendMessage({action: "test"}, callback);
-// Используйте: safeSendMessage({action: "test"}, callback);
-
-// Вместо: const port = chrome.runtime.connect({name: "test"});
-// Используйте: const port = safeConnect("test");
-
-console.log('[OES Extension] Helper functions initialized');
-
-// --- ЗАЩИТА ОТ ПОВТОРНОГО ЗАПУСКА ---
+// ============================================================================
+// ЗАЩИТА ОТ ПОВТОРНОГО ЗАПУСКА
+// ============================================================================
 if (window.quizHelperHasRun) {
+    console.log('[OES Extension] Quiz helper already running, skipping initialization');
 } else {
     window.quizHelperHasRun = true;
 
+    // ========================================================================
+    // ИНИЦИАЛИЗАЦИЯ
+    // ========================================================================
     async function preInitCheck() {
         try {
-            const response = await chrome.runtime.sendMessage({
-                action: "checkIfDestroyed",
+            const response = await new Promise((resolve, reject) => {
+                safeSendMessage({ action: "checkIfDestroyed" }, (response) => {
+                    if (response && response.error) {
+                        reject(new Error(response.error));
+                    } else {
+                        resolve(response);
+                    }
+                });
             });
 
             if (response && response.isDestroyed) {
@@ -116,29 +91,35 @@ if (window.quizHelperHasRun) {
             }
             return false;
         } catch (e) {
+            console.error('[OES Extension] Pre-init check failed:', e);
             return false;
         }
     }
 
+    // ========================================================================
+    // ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
+    // ========================================================================
     let hoverEnabled = true;
     let isDisplayStuck = false;
     let currentAnswerDisplay = null;
     let questionsDataCache = [];
 
+    // Создание индикатора
     let helperElement = document.createElement("div");
     helperElement.id = "exam-helper-btn-indicator";
     helperElement.style.cssText = `
-      position: fixed;
-      bottom: 0px;
-      right: 0px;
-      width: 8px;
-      height: 8px;
-      background-color: #a1a1a1ff;
-      border-radius: 50%;
-      z-index: 999999999; 
-      opacity: 0.2 !important; 
-      pointer-events: none;
-  `;
+        position: fixed;
+        bottom: 0px;
+        right: 0px;
+        width: 8px;
+        height: 8px;
+        background-color: #a1a1a1ff;
+        border-radius: 50%;
+        z-index: 999999999; 
+        opacity: 0.2 !important; 
+        pointer-events: none;
+    `;
+    
     if (document.body) {
         document.body.appendChild(helperElement);
     } else {
@@ -149,7 +130,12 @@ if (window.quizHelperHasRun) {
         });
     }
 
+    // ========================================================================
+    // ФУНКЦИЯ САМОУНИЧТОЖЕНИЯ
+    // ========================================================================
     function destroyExtension() {
+        console.log('[OES Extension] Destroying extension');
+        
         if (helperElement && helperElement.parentNode) {
             helperElement.remove();
         }
@@ -157,53 +143,61 @@ if (window.quizHelperHasRun) {
             currentAnswerDisplay.remove();
         }
 
-        document
-            .querySelectorAll(
-                "div[id^='q'], section[data-region='question'], .que, form, .quiz-question"
-            )
-            .forEach((el) => {
-                if (el.__mouseoverHandler__) {
-                    el.removeEventListener("mouseover", el.__mouseoverHandler__);
-                    el.removeEventListener("mouseout", el.__mouseoutHandler__);
-                    delete el.__mouseoverHandler__;
-                    delete el.__mouseoutHandler__;
-                }
-            });
+        document.querySelectorAll(
+            "div[id^='q'], section[data-region='question'], .que, form, .quiz-question"
+        ).forEach((el) => {
+            if (el.__mouseoverHandler__) {
+                el.removeEventListener("mouseover", el.__mouseoverHandler__);
+                el.removeEventListener("mouseout", el.__mouseoutHandler__);
+                delete el.__mouseoverHandler__;
+                delete el.__mouseoutHandler__;
+            }
+        });
 
         window.extensionIsDestroyed = true;
         questionsDataCache = [];
     }
 
-    async function getAnswerFromGemini(
-        questionText,
-        questionType,
-        isMultipleChoice,
-        answerOptions = []
-    ) {
+    // ========================================================================
+    // РАБОТА С GEMINI API
+    // ========================================================================
+    async function getAnswerFromGemini(questionText, questionType, isMultipleChoice, answerOptions = []) {
         const data = {
             questionText: questionText,
             questionType: questionType,
             isMultipleChoice: isMultipleChoice,
             answerOptions: answerOptions,
         };
+        
         try {
-            const response = await chrome.runtime.sendMessage({
-                action: "getGeminiAnswer",
-                data: data,
+            const response = await new Promise((resolve, reject) => {
+                safeSendMessage({
+                    action: "getGeminiAnswer",
+                    data: data
+                }, (response) => {
+                    if (response && response.error) {
+                        reject(new Error(response.error || response.answer));
+                    } else {
+                        resolve(response);
+                    }
+                });
             });
+            
             return response?.answer || "Error getting answer";
         } catch (error) {
+            console.error('[OES Extension] Gemini API error:', error);
             return "Error: Could not reach helper service.";
         }
     }
 
+    // ========================================================================
+    // ОБРАБОТКА ВОПРОСОВ
+    // ========================================================================
     function cleanQuestionHtml(htmlString) {
         const tempDiv = document.createElement("div");
         tempDiv.innerHTML = htmlString;
 
-        tempDiv
-            .querySelectorAll("script, style, link, noscript")
-            .forEach((el) => el.remove());
+        tempDiv.querySelectorAll("script, style, link, noscript").forEach((el) => el.remove());
 
         const cleanAttributes = (element) => {
             Array.from(element.attributes).forEach((attr) => {
@@ -249,19 +243,14 @@ if (window.quizHelperHasRun) {
             }
         });
 
-        if (bestBlock) {
-            return bestBlock;
-        }
+        return bestBlock;
     }
 
     function formatAnswerText(type, rawAnswer) {
         let answer = rawAnswer.trim();
 
         answer = answer
-            .replace(
-                /^(the correct answer is|correct answer is|correct answer:)\s*/i,
-                ""
-            )
+            .replace(/^(the correct answer is|correct answer is|correct answer:)\s*/i, "")
             .replace(/^(option|variant)\s*[a-z]\s*[:.]\s*/i, "")
             .replace(/^(the correct option is)\s*/i, "")
             .trim();
@@ -284,34 +273,30 @@ if (window.quizHelperHasRun) {
             "div[id^='q'], section[data-region='question'], .que, .quiz-question, div.content, div.question, div.test-item"
         );
 
-        const allQuestionBlocks = Array.from(possibleQuestionContainers).filter(
-            (block) => {
-                if (block.id === "quiz-timer-wrapper") {
+        const allQuestionBlocks = Array.from(possibleQuestionContainers).filter((block) => {
+            if (block.id === "quiz-timer-wrapper") {
+                return false;
+            }
+
+            const isQuestionWrapper = block.matches("div[id^='q']");
+
+            if (isQuestionWrapper) {
+                const ancestorQuestionBlock = block.parentElement.closest('[id^="q"]');
+                if (ancestorQuestionBlock && ancestorQuestionBlock !== block) {
                     return false;
                 }
-
-                const isQuestionWrapper = block.matches("div[id^='q']");
-
-                if (isQuestionWrapper) {
-                    const ancestorQuestionBlock =
-                        block.parentElement.closest('[id^="q"]');
-
-                    if (ancestorQuestionBlock && ancestorQuestionBlock !== block) {
-                        return false;
-                    }
-                    return true;
-                }
-
-                if (block.matches("form, .quiz-question")) {
-                    if (block.querySelector('.que, div[id^="q"]')) {
-                        return true;
-                    }
-                    return false;
-                }
-
                 return true;
             }
-        );
+
+            if (block.matches("form, .quiz-question")) {
+                if (block.querySelector('.que, div[id^="q"]')) {
+                    return true;
+                }
+                return false;
+            }
+
+            return true;
+        });
 
         const uniqueQuestionBlocks = Array.from(new Set(allQuestionBlocks));
 
@@ -348,9 +333,7 @@ if (window.quizHelperHasRun) {
             }
 
             if (questionType === "multichoice" || questionType === "truefalse") {
-                const labels = questionBlock.querySelectorAll(
-                    'label, [data-region="answer-label"]'
-                );
+                const labels = questionBlock.querySelectorAll('label, [data-region="answer-label"]');
                 labels.forEach((label) => {
                     const text = label.innerText.trim();
                     if (text.length > 1) {
@@ -375,9 +358,7 @@ if (window.quizHelperHasRun) {
                         .filter((t) => t.length > 1);
 
                     if (qPart) {
-                        matchData += `\n ${index + 1}. ${qPart}\n Answers: ${aOptions.join(
-                            " / "
-                        )}\n`;
+                        matchData += `\n ${index + 1}. ${qPart}\n Answers: ${aOptions.join(" / ")}\n`;
                     }
                 });
                 questionText += matchData;
@@ -401,6 +382,9 @@ if (window.quizHelperHasRun) {
         return questionsData;
     }
 
+    // ========================================================================
+    // UI ФУНКЦИИ
+    // ========================================================================
     function toggleHover() {
         hoverEnabled = !hoverEnabled;
 
@@ -423,10 +407,7 @@ if (window.quizHelperHasRun) {
     function toggleDisplayVisibility() {
         if (!currentAnswerDisplay) return;
 
-        if (
-            !currentAnswerDisplay.innerText ||
-            currentAnswerDisplay.innerText.trim() === ""
-        ) {
+        if (!currentAnswerDisplay.innerText || currentAnswerDisplay.innerText.trim() === "") {
             return;
         }
 
@@ -466,8 +447,8 @@ if (window.quizHelperHasRun) {
                 max-width: 250px; 
                 pointer-events: none; 
                 white-space: pre-wrap; 
-                text-align: left; 
-              `;
+                text-align: left;
+            `;
 
             if (document.body) {
                 document.body.appendChild(currentAnswerDisplay);
@@ -509,14 +490,8 @@ if (window.quizHelperHasRun) {
             };
 
             if (questionBlock.__mouseoverHandler__) {
-                questionBlock.removeEventListener(
-                    "mouseover",
-                    questionBlock.__mouseoverHandler__
-                );
-                questionBlock.removeEventListener(
-                    "mouseout",
-                    questionBlock.__mouseoutHandler__
-                );
+                questionBlock.removeEventListener("mouseover", questionBlock.__mouseoverHandler__);
+                questionBlock.removeEventListener("mouseout", questionBlock.__mouseoutHandler__);
             }
 
             questionBlock.addEventListener("mouseover", mouseOverHandler);
@@ -527,9 +502,15 @@ if (window.quizHelperHasRun) {
         });
     }
 
+    // ========================================================================
+    // ИНИЦИАЛИЗАЦИЯ
+    // ========================================================================
     async function init() {
+        console.log('[OES Extension] Initializing quiz helper');
+        
         hoverEnabled = true;
         isDisplayStuck = false;
+        
         if (helperElement) {
             helperElement.style.display = "block";
             helperElement.style.backgroundColor = "#a1a1a1ff";
@@ -542,24 +523,27 @@ if (window.quizHelperHasRun) {
             }
             currentAnswerDisplay = null;
 
-            document
-                .querySelectorAll(
-                    "div[id^='q'], section[data-region='question'], .que, form, .quiz-question"
-                )
-                .forEach((el) => {
-                    if (el.__mouseoverHandler__) {
-                        el.removeEventListener("mouseover", el.__mouseoverHandler__);
-                        el.removeEventListener("mouseout", el.__mouseoutHandler__);
-                        delete el.__mouseoverHandler__;
-                        delete el.__mouseoutHandler__;
-                    }
-                });
+            document.querySelectorAll(
+                "div[id^='q'], section[data-region='question'], .que, form, .quiz-question"
+            ).forEach((el) => {
+                if (el.__mouseoverHandler__) {
+                    el.removeEventListener("mouseover", el.__mouseoverHandler__);
+                    el.removeEventListener("mouseout", el.__mouseoutHandler__);
+                    delete el.__mouseoverHandler__;
+                    delete el.__mouseoutHandler__;
+                }
+            });
         }
 
         questionsDataCache = await parseQuestions();
         displayAnswerOnHover(questionsDataCache);
+        
+        console.log('[OES Extension] Quiz helper initialized, found', questionsDataCache.length, 'questions');
     }
 
+    // ========================================================================
+    // ОБРАБОТЧИКИ СОБЫТИЙ
+    // ========================================================================
     if (!window.isKeydownListenerAttached) {
         window.addEventListener("keydown", (event) => {
             if (event.altKey && (event.key === "x" || event.key === "X")) {
@@ -588,9 +572,7 @@ if (window.quizHelperHasRun) {
             event.preventDefault();
             event.stopPropagation();
             destroyExtension();
-            chrome.runtime.sendMessage({
-                action: "selfDestruct",
-            });
+            safeSendMessage({ action: "selfDestruct" }, () => {});
             document.removeEventListener("dblclick", selfDestructListener, true);
         }
     };
@@ -600,6 +582,9 @@ if (window.quizHelperHasRun) {
         window.isDestroyListenerAttached = true;
     }
 
+    // ========================================================================
+    // ЗАПУСК
+    // ========================================================================
     async function startScript() {
         const isDestroyed = await preInitCheck();
         if (!isDestroyed) {
@@ -608,8 +593,12 @@ if (window.quizHelperHasRun) {
             } else {
                 init();
             }
+        } else {
+            console.log('[OES Extension] Extension is destroyed, skipping initialization');
         }
     }
 
     startScript();
 }
+
+console.log('[OES Extension] Injector script loaded successfully');
