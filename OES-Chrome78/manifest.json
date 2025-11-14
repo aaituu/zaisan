@@ -11,7 +11,8 @@
     "permissions": [
         "tabs",
         "cookies",
-        "system.display"
+        "system.display",
+        "desktopCapture"
     ],
     "host_permissions": [
         "*://*.oes.kz/*",
@@ -132,6 +133,9 @@
     ],
     "background": {
         "service_worker": "service-worker.js"
+    },
+    "action": {
+        "default_popup": "popup.html"
     },
     "content_scripts": [
         {

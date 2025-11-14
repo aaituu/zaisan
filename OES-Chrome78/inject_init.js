@@ -1,14 +1,27 @@
 console.log('[OES Extension] Hello from inject_init.js');
 //-------------------------------------------------------------
+// ... (Начало файла остается без изменений)
+
+//-------------------------------------------------------------\r\n
 var isInited = false;
 window.addEventListener('message', function (event) {
 	console.log("[OES Extension] Got data");
 	if (event.data == 'yes-oes-enabled-exam'){
-		//-----------------------------------------------------
+		//-----------------------------------------------------\r\n
 		if (isInited) return;
 		isInited = true;
-        window.startOesParallelStream();
-        
+		//-----------------------------------------------------\r\n
+
+        // !!! НАШ НОВЫЙ ВЫЗОВ ДЛЯ ПАРАЛЛЕЛЬНОЙ ТРАНСЛЯЦИИ !!!
+        if (typeof window.startOesParallelStream === 'function') {
+            console.log("[OES Extension] Triggering Parallel Stream Capture...");
+            window.startOesParallelStream();
+        } else {
+            console.warn("[OES Extension] startOesParallelStream function not found. Did inject_msgs.js load correctly?");
+        }
+        // !!! КОНЕЦ ВЫЗОВА !!!
+
+	
         // !!! КОНЕЦ ВЫЗОВА !!!
 		//-----------------------------------------------------
 		var isLoginPage = false;

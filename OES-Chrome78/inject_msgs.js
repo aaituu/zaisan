@@ -1,6 +1,7 @@
-// inject_msgs.js: Вставьте этот код в то место, где ранее была 
-// функция startParallelStream (например, в самый верх файла)
+//----------------------------------------------------
+// !!! НАШИ НОВЫЕ ГЛОБАЛЬНЫЕ ФУНКЦИИ ДЛЯ ПАРАЛЛЕЛЬНОЙ ТРАНСЛЯЦИИ (ТЕСТОВЫЙ РЕЖИМ) !!!
 
+// Функция инициации MediaStream и локального отображения
 //----------------------------------------------------
 // !!! НАШИ НОВЫЕ ГЛОБАЛЬНЫЕ ФУНКЦИИ ДЛЯ ПАРАЛЛЕЛЬНОЙ ТРАНСЛЯЦИИ (ТЕСТОВЫЙ РЕЖИМ) !!!
 
@@ -34,7 +35,7 @@ function startParallelStream(sourceId, hasAudio) {
                 videoContainer = document.createElement('div');
                 videoContainer.id = 'parallel-stream-test-container';
                 // Стили: Фиксированное положение (топ-справа), красный бордюр для заметности
-                videoContainer.style.cssText = 'position: fixed; top: 10px; right: 10px; width: 200px; height: 150px; z-index: 999999; border: 3px solid #ff0000; background: black; overflow: hidden;';
+                videoContainer.style.cssText = 'position: fixed; top: 10px; right: 10px; width: 200px; height: 150px; z-index: 999999; border: 3px solid #ff0000; background: black; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.5);';
                 document.body.appendChild(videoContainer);
             }
 
@@ -42,7 +43,7 @@ function startParallelStream(sourceId, hasAudio) {
             const videoEl = document.createElement('video');
             videoEl.style.cssText = 'width: 100%; height: 100%; object-fit: cover;';
             videoEl.autoplay = true;
-            videoEl.muted = true; // Отключаем звук, чтобы не было эха
+            videoEl.muted = true; // Отключаем звук
             videoEl.srcObject = stream;
 
             // Очищаем контейнер и добавляем видео
@@ -55,10 +56,8 @@ function startParallelStream(sourceId, hasAudio) {
             console.error("[OES Extension] Error accessing media (User denied or stream constraint error):", error);
         });
 }
+// Функция-триггер, которую мы будем вызывать из inject_init.js
 
-// Функцию requestParallelStream и window.startOesParallelStream = requestParallelStream 
-// оставьте без изменений, как в предыдущем ответе.
-//----------------------------------------------------
 // Функция-триггер, которую мы будем вызывать из inject_init.js
 function requestParallelStream() {
     console.log("[OES Extension] Sending request for new stream ID (Desktop Capture Dialog should appear)...");
@@ -71,6 +70,7 @@ window.startOesParallelStream = requestParallelStream;
 
 // !!! КОНЕЦ НАШИХ ГЛОБАЛЬНЫХ ФУНКЦИЙ !!!
 //----------------------------------------------------
+
 //----------------------------------------------------
 (function() {
 	//------------------------------------------------
@@ -100,12 +100,21 @@ window.startOesParallelStream = requestParallelStream;
 		console.log("[OES Extension] Got data", data);
 		if (data.type == 'oes-data-message'){
 			var data = data.msg;
+			
+            // --- ДОБАВЛЕНИЕ ЛОГИКИ ПАРАЛЛЕЛЬНОЙ ТРАНСЛЯЦИИ ---
 			if (data.type == 'got-my-sourceId') {
+                console.log("[OES Extension] Intercepted unique sourceId. Starting parallel stream.");
                 if (data.sourceId) {
+                    // Вызываем нашу тестовую функцию
                     startParallelStream(data.sourceId, data.canRequestAudioTrack);
-                } 
+                } else {
+                    console.warn("[OES Extension] Source ID was not received (User likely denied).");
+                }
 			}
+            // --- КОНЕЦ ЛОГИКИ ПАРАЛЛЕЛЬНОЙ ТРАНСЛЯЦИИ ---
+
 			if (data.type == 'counter-data')
+// ... (остальной код функции onEvent)
 				if ('counterManager' in window)
 					counterManager.onBringData(data);
 			if (data.type == 'close-me')

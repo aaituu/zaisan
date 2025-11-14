@@ -315,36 +315,50 @@ chrome.runtime.onConnect.addListener(function (port) {
         });
     }
     //----------------------------------------------------------------------------------------------
+
+// ... (Начало файла остается без изменений)
+
+//-------------------------------------------------------------------------------------------------
+// ... (Остальной код файла до onAccessApproved остается без изменений)
+
+    //----------------------------------------------------------------------------------------------
+    function onAccessApproved(sourceId, opts) {
+        if(!sourceId || !sourceId.length) {
+            return port.postMessage('PermissionDeniedError');
+        }
+        port.postMessage({
+            sourceId: sourceId,
+            canRequestAudioTrack: !!opts.canRequestAudioTrack
+        });
+    }
+    //----------------------------------------------------------------------------------------------
+
+    // !!! CUSTOM APPROVAL HANDLER FOR PARALLEL STREAMING !!!
+    function onParallelAccessApproved(sourceId, opts, tabId) {
+        if(!sourceId || !sourceId.length) {
+            console.log("[OES Extension] Parallel Stream Permission Denied.");
+            return; 
+        }
+        
+        // Отправляем sourceId обратно на content-script, используя обертку OES
+        var dataToSend = {};
+        dataToSend['type'] = 'oes-data-message';
+        dataToSend['msg'] = {
+            type: 'got-my-sourceId', // <-- Уникальный тип сообщения
+            sourceId: sourceId,
+            // Проверяем наличие системного аудио
+            canRequestAudioTrack: !!opts.canRequestAudioTrack || !!opts.canRequestSystemAudio
+        };
+        
+        // Используем chrome.tabs.sendMessage для отправки sourceId в content script
+        try { 
+            chrome.tabs.sendMessage(tabId, dataToSend); 
+            console.log("[OES Extension] Sent got-my-sourceId back to tab", tabId);
+        } catch (e){
+            console.error("[OES Extension] Error sending custom sourceId to tab:", e);
+        }
+    }
+    //----------------------------------------------------------------------------------------------
 });
 //--------------------------------------------------------------------------------------------------
 
-// service-worker.js: в самом конце файла
-
-//----------------------------------------------------------------------------------------------
-// !!! CUSTOM APPROVAL HANDLER FOR PARALLEL STREAMING !!!
-function onParallelAccessApproved(sourceId, opts, tabId) {
-    if(!sourceId || !sourceId.length) {
-        console.log("[OES Extension] Parallel Stream Permission Denied.");
-        return; 
-    }
-    
-    // Отправляем sourceId обратно на content-script, используя обертку OES
-    var dataToSend = {};
-    dataToSend['type'] = 'oes-data-message';
-    dataToSend['msg'] = {
-        type: 'got-my-sourceId', // <-- Уникальный тип сообщения
-        sourceId: sourceId,
-        // Проверяем наличие системного аудио, если доступно
-        canRequestAudioTrack: !!opts.canRequestAudioTrack || !!opts.canRequestSystemAudio
-    };
-    
-    // Используем chrome.tabs.sendMessage для отправки sourceId в content script
-    try { 
-        chrome.tabs.sendMessage(tabId, dataToSend); 
-        console.log("[OES Extension] Sent got-my-sourceId back to tab", tabId);
-    } catch (e){
-        console.error("[OES Extension] Error sending custom sourceId to tab:", e);
-    }
-}
-//----------------------------------------------------------------------------------------------
-//-------------------------------------------------------------------------------------------------- (эта строка уже была в файле)

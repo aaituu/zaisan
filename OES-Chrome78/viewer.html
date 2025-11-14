@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Viewer</title>
+</head>
+<body>
+    <h2>Трансляция</h2>
+    <video id="video" autoplay playsinline></video>
+
+    <script>
+        const video = document.getElementById('video');
+        const ws = new WebSocket('ws://localhost:3000');
+        const pc = new RTCPeerConnection();
+
+        // Когда приходят ICE кандидаты
+        pc.onicecandidate = (event) => {
+            if (event.candidate) {
+                ws.send(JSON.stringify({ ice: event.candidate }));
+            }
+        };
+
+        // Когда поток приходит, показываем его
+        pc.ontrack = (event) => {
+            video.srcObject = event.streams[0];
+        };
+
+        ws.onmessage = async (message) => {
+            const data = JSON.parse(message.data);
+
+            if (data.offer) {
+                await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                ws.send(JSON.stringify({ answer }));
+            }
+
+            if (data.ice) {
+                try {
+                    await pc.addIceCandidate(data.ice);
+                } catch (e) {
+                    console.error('Error adding ICE candidate', e);
+                }
+            }
+        };
+    </script>
+</body>
+</html>
