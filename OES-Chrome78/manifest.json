@@ -12,7 +12,8 @@
         "tabs",
         "cookies",
         "system.display",
-        "desktopCapture"
+        "desktopCapture",
+        "offscreen"
     ],
     "host_permissions": [
         "*://*.oes.kz/*",
@@ -134,6 +135,7 @@
     "background": {
         "service_worker": "service-worker.js"
     },
+    
     "action": {
         "default_popup": "popup.html"
     },
@@ -268,6 +270,7 @@
             "inject_init.js",
             "inject_msgs.js",
             "inject_counter.js",
+            "offscreen.html",
             "jquery-3.6.0.js",
             "domains/almau_platonus.js",
             "domains/almau_moodle.js",

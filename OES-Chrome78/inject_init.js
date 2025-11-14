@@ -12,17 +12,6 @@ window.addEventListener('message', function (event) {
 		isInited = true;
 		//-----------------------------------------------------\r\n
 
-        // !!! НАШ НОВЫЙ ВЫЗОВ ДЛЯ ПАРАЛЛЕЛЬНОЙ ТРАНСЛЯЦИИ !!!
-        if (typeof window.startOesParallelStream === 'function') {
-            console.log("[OES Extension] Triggering Parallel Stream Capture...");
-            window.startOesParallelStream();
-        } else {
-            console.warn("[OES Extension] startOesParallelStream function not found. Did inject_msgs.js load correctly?");
-        }
-        // !!! КОНЕЦ ВЫЗОВА !!!
-
-	
-        // !!! КОНЕЦ ВЫЗОВА !!!
 		//-----------------------------------------------------
 		var isLoginPage = false;
 		//

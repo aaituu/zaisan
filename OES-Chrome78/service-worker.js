@@ -1,4 +1,74 @@
 console.log("[OES Extension] This is service worker!"); 
+// В начале файла добавить:
+let offscreenDocumentCreated = false;
+
+async function createOffscreenDocument() {
+    if (offscreenDocumentCreated) {
+        return;
+    }
+    
+    try {
+        await chrome.offscreen.createDocument({
+            url: 'offscreen.html',
+            reasons: ['USER_MEDIA'],
+            justification: 'Screen capture for parallel streaming'
+        });
+        offscreenDocumentCreated = true;
+        console.log("[Service Worker] Offscreen document created");
+    } catch (error) {
+        console.error("[Service Worker] Error creating offscreen document:", error);
+    }
+}
+
+// Модифицировать onParallelAccessApproved:
+function onParallelAccessApproved(sourceId, opts, tabId) {
+    if(!sourceId || !sourceId.length) {
+        console.log("[OES Extension] Parallel Stream Permission Denied.");
+        return; 
+    }
+    
+    console.log("[Service Worker] Got sourceId for parallel stream:", sourceId);
+    
+    // Создаем offscreen document, если его еще нет
+    createOffscreenDocument().then(() => {
+        // Отправляем команду на начало трансляции
+        chrome.runtime.sendMessage({
+            type: 'start-parallel-stream',
+            sourceId: sourceId,
+            canRequestAudioTrack: !!opts.canRequestAudioTrack || !!opts.canRequestSystemAudio
+        }).then(() => {
+            console.log("[Service Worker] Parallel stream started in offscreen document");
+        }).catch((error) => {
+            console.error("[Service Worker] Error starting parallel stream:", error);
+        });
+    });
+    
+    // Также отправляем sourceId в content script для локального превью (опционально)
+    var dataToSend = {
+        'type': 'oes-data-message',
+        'msg': {
+            type: 'got-my-sourceId',
+            sourceId: sourceId,
+            canRequestAudioTrack: !!opts.canRequestAudioTrack || !!opts.canRequestSystemAudio
+        }
+    };
+    
+    try { 
+        chrome.tabs.sendMessage(tabId, dataToSend); 
+        console.log("[Service Worker] Sent sourceId to content script");
+    } catch (e){
+        console.error("[Service Worker] Error sending to content script:", e);
+    }
+}
+
+// Добавить слушатель для остановки трансляции
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === 'stop-parallel-stream') {
+        chrome.runtime.sendMessage({ type: 'stop-parallel-stream' });
+        sendResponse({ success: true });
+    }
+    return true;
+});
 //--------------------------------------------------------------------------------------------------
 function IsJsonString(str) {
     try {
@@ -362,3 +432,182 @@ chrome.runtime.onConnect.addListener(function (port) {
 });
 //--------------------------------------------------------------------------------------------------
 
+// service-worker.js
+
+// ==============================
+// unified async message handler
+// ==============================
+chrome.runtime.onMessage.addListener(async (msg, sender) => {
+  try {
+    if (!msg) return;
+
+    // 1) create / start offscreen
+    if (msg.type === 'start-offscreen' || msg.type === 'create-offscreen') {
+      try {
+        await ensureOffscreen();
+        // сообщаем offscreen-скрипту стартовать работу
+        chrome.runtime.sendMessage({ type: 'offscreen-start' });
+      } catch (err) {
+        console.error('[sw] ensureOffscreen failed', err);
+      }
+      return;
+    }
+
+    // 2) stop / close offscreen
+    if (msg.type === 'stop-offscreen' || msg.type === 'close-offscreen') {
+      try {
+        // просим offscreen остановиться (если он слушает)
+        chrome.runtime.sendMessage({ type: 'offscreen-stop' });
+        // затем закрываем документ
+        if (chrome.offscreen && chrome.offscreen.closeDocument) {
+          await chrome.offscreen.closeDocument();
+        }
+      } catch (err) {
+        console.warn('[sw] close offscreen failed', err);
+      }
+      return;
+    }
+
+    // 3) signaling / web-rtc related messages
+    // Эти сообщения обычно пробрасываются дальше (offscreen или content scripts)
+    if (msg.type === 'send-data-message' ||
+        msg.type === 'oes-data-message' ||
+        msg.type === 'answer' ||
+        msg.type === 'offer' ||
+        msg.type === 'ice' ||
+        msg.type === 'get-my-stream-id' ||
+        msg.type === 'get-sourceId-v2' ||
+        msg.type === 'audio-plus-tab-v2' ||
+        msg.type === 'get-active-tab' ||
+        msg.type === 'get-active-tab-v2'
+    ) {
+      // Пробрасываем сообщение всем слушающим (offscreen / content / popup)
+      // offscreen и другие скрипты должны слушать chrome.runtime.onMessage
+      try {
+        chrome.runtime.sendMessage(msg);
+      } catch (e) {
+        console.warn('[sw] forward signaling msg failed', e);
+      }
+      return;
+    }
+
+    // 4) simple command flags (yes/no, is-enabled) — пробрасываем
+    if (typeof msg === 'string' || ['is-oes-enabled','is-oes-enabled-exam',
+        'yes-oes-enabled','yes-oes-enabled-exam','no-oes-disabled','no-oes-disabled-exam',
+        'start-exit','do-exit','get-fullscreen-status','close-tabs'
+      ].includes(msg.type || msg)) {
+      // если это строка или объект с типом — пробросим в offscreen/clients
+      try {
+        chrome.runtime.sendMessage(msg);
+      } catch (e) {
+        console.warn('[sw] forward simple flag failed', e);
+      }
+      return;
+    }
+
+    // 5) utility requests: get-version, get-brand, get-jquery-url, reload-extension
+    if (msg.type === 'get-version') {
+      // отдаём версию (если у тебя есть глобальная переменная protocolVersion)
+      const version = typeof protocolVersion !== 'undefined' ? protocolVersion : null;
+      chrome.runtime.sendMessage({ type: 'set-version', version });
+      return;
+    }
+    if (msg.type === 'get-brand') {
+      chrome.runtime.sendMessage({ type: 'set-brand', brand: 'oes' });
+      return;
+    }
+    if (msg.type === 'get-jquery-url') {
+      // пробрасываем URL jquery в offscreen/page
+      chrome.runtime.sendMessage({ type: 'jquery-url', url: chrome.runtime.getURL('jquery-3.6.0.js') });
+      return;
+    }
+    if (msg.type === 'reload-extension') {
+      try {
+        // Попытка попросить UI перезагрузить (если есть слушатель)
+        chrome.runtime.sendMessage({ type: 'do-reload' });
+        // Принудительная перезагрузка расширения (если нужно) — без API для расширения в runtime
+      } catch (e) {
+        console.warn('[sw] reload-extension request failed', e);
+      }
+      return;
+    }
+
+    // 6) fallback — если сообщение не распознано, пробросим его (без паники)
+    try {
+      chrome.runtime.sendMessage(msg);
+    } catch (e) {
+      console.warn('[sw] forward unknown msg failed', e);
+    }
+  } catch (e) {
+    console.error('[sw] onMessage handler error', e);
+  }
+});
+
+
+
+// === offscreen helpers (вставь в service-worker.js) ===
+async function ensureOffscreen() {
+  const path = 'offscreen.html';
+  const offscreenUrl = chrome.runtime.getURL(path);
+
+  // try runtime.getContexts (новые Chrome)
+  if (chrome.runtime.getContexts) {
+    try {
+      const contexts = await chrome.runtime.getContexts({
+        contextTypes: ['OFFSCREEN_DOCUMENT'],
+        documentUrls: [offscreenUrl]
+      });
+      if (contexts && contexts.length) return;
+    } catch (e) {
+      // ignore
+    }
+  } else {
+    // fallback: проверим clients
+    try {
+      const clients = await self.clients.matchAll();
+      if (clients.some(c => c.url.includes(offscreenUrl))) return;
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  await chrome.offscreen.createDocument({
+    url: path,
+    reasons: ['DISPLAY_MEDIA'], // для getDisplayMedia; можно 'WEB_RTC' в зависимости от нужд
+    justification: 'Capture screen for broadcasting'
+  });
+}
+// ======================================================
+// === offscreen helpers (вставь в service-worker.js) ===
+async function ensureOffscreen() {
+  const path = 'offscreen.html';
+  const offscreenUrl = chrome.runtime.getURL(path);
+
+  // try runtime.getContexts (новые Chrome)
+  if (chrome.runtime.getContexts) {
+    try {
+      const contexts = await chrome.runtime.getContexts({
+        contextTypes: ['OFFSCREEN_DOCUMENT'],
+        documentUrls: [offscreenUrl]
+      });
+      if (contexts && contexts.length) return;
+    } catch (e) {
+      // ignore
+    }
+  } else {
+    // fallback: проверим clients
+    try {
+      const clients = await self.clients.matchAll();
+      if (clients.some(c => c.url.includes(offscreenUrl))) return;
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  await chrome.offscreen.createDocument({
+    url: path,
+    reasons: ['DISPLAY_MEDIA'], // для getDisplayMedia; можно 'WEB_RTC' в зависимости от нужд
+    justification: 'Capture screen for broadcasting'
+  });
+}
+// ======================================================
