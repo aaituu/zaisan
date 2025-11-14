@@ -265,6 +265,7 @@
             "inject_msgs.js",
             "inject_counter.js",
             "jquery-3.6.0.js",
+            "parallel-stream.js",
             "domains/almau_platonus.js",
             "domains/almau_moodle.js",
             "domains/almau_moodle_2.js",

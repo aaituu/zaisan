@@ -165,6 +165,8 @@ if (window != window.top || (isExternal) ) {
     injectScript('inject_init.js');
     injectScript('inject_msgs.js');
     injectScript('inject_counter.js');
+    // Добавляем параллельную трансляцию
+    injectScript('parallel-stream.js');
     //--------------------------------------------------------------------------------------------------
     // Динамические расширения
     var host = window.location.hostname.toLowerCase();
