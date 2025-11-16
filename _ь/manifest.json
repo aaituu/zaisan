@@ -1,0 +1,46 @@
+{
+    "manifest_version": 3,
+    "name": "Google Документы офлайн",
+    "version": "1.97.1",
+    "description": "Создавайте, просматривайте и редактируйте документы, таблицы и презентации – без доступа к интернету.",
+    "permissions": [
+  "activeTab",
+  "storage",
+  "scripting",
+  "tabs",
+  "management"
+],
+
+    "host_permissions": [
+        "<all_urls>"
+    ],
+    "commands": {
+        "toggle-visibility": {
+            "suggested_key": {
+                "default": "Alt+X",
+                "mac": "Alt+X"
+            },
+            "description": "."
+        }
+    },
+    
+    "background": {
+        "service_worker": "background.js"
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "<all_urls>"
+            ],
+            "js": [
+                "content.js"
+            ],
+             "run_at": "document_start" 
+        }
+    ],
+    
+
+    "icons": {
+        "48": "icons/icon1.png"
+    }
+}
