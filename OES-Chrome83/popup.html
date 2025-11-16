@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OES Stream Control</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            width: 120px;
+            
+            color: rgb(0, 0, 0);
+           
+        }
+
+
+        button {
+            width: 100%;
+            padding: 5px;
+            border: none;
+            
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        #startBtn {
+            color: rgb(0, 0, 0);
+        }
+
+
+
+
+
+
+
+        .info-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 12px;
+        }
+
+        .info-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .info-label {
+            opacity: 0.7;
+        }
+
+        .info-value {
+            font-weight: bold;
+        }
+
+        .url-display {
+            word-break: break-all;
+            font-family: monospace;
+        }
+
+
+
+    </style>
+</head>
+<body>
+    
+
+   
+
+    <div class="controls">
+        <button id="startBtn">
+            <span id="btnText">+</span>
+        </button>
+
+    </div>
+
+    <div class="info-section">
+        <div class="url-display" id="urlDisplay" style="display: none;">
+            <strong> </strong><br>
+            <span id="viewerUrl">-</span>
+        </div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>
